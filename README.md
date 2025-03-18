@@ -27,6 +27,7 @@ This project is a React application created with Vite. It allows users to upload
    ```
 
 4. **Run the development server:**
+
    Make sure your Ai-extracto backend is running
    ```bash
    npm run dev
