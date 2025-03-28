@@ -1030,7 +1030,50 @@ h1:after {
   position: relative;
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  min-height: 120px;
+}
+
+.pdf-selector-content {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+  flex: 1;
+}
+
+.pdf-selector-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+.pdf-citation {
+  background: var(--accent-color);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  align-self: flex-start;
+}
+
+.pdf-selector-status {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 20px;
+  display: inline-block;
+  text-align: center;
+  background-color: rgba(74, 144, 226, 0.15);
+  color: var(--accent-color);
+}
+
+.pdf-selector-item.processed .pdf-selector-status {
+  background-color: rgba(46, 204, 113, 0.15);
+  color: var(--success-color);
 }
 
 .pdf-selector-item:hover {
@@ -1064,44 +1107,6 @@ h1:after {
   background: var(--bg-tertiary);
   border-color: var(--accent-color);
   box-shadow: 0 4px 12px rgba(74, 144, 226, 0.1);
-}
-
-.pdf-selector-status {
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 20px;
-  display: inline-block;
-  text-align: center;
-}
-
-.pdf-selector-status.processed {
-  background-color: rgba(46, 204, 113, 0.15);
-  color: var(--success-color);
-}
-
-.pdf-selector-status.pending {
-  background-color: rgba(74, 144, 226, 0.15);
-  color: var(--accent-color);
-}
-
-.pdf-selector-name {
-  font-size: 0.9rem;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pdf-selector-indicator {
-  height: 3px;
-  background: var(--accent-color);
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  border-radius: 0 0 8px 8px;
-  transition: all 0.3s ease;
 }
 
 .pdf-selector-item.next-pdf {
@@ -1646,4 +1651,129 @@ h1:after {
   .multi-extract-pdf-label::before {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235a9ce2'%3E%3Cpath d='M16,15H9V13H16V15M19,11H9V9H19V11M19,7H9V5H19V7M3,5V21H19V23H3A2,2 0 0,1 1,21V5H3M21,1A2,2 0 0,1 23,3V17C23,18.11 22.11,19 21,19H7A2,2 0 0,1 5,17V3C5,1.89 5.89,1 7,1H21M7,3V17H21V3H7Z'/%3E%3C/svg%3E");
   }
+}
+
+/* Estilos para las citas de PDFs */
+.pdf-citation {
+  background: var(--accent-color);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-left: 0;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* Ajuste para el modo oscuro */
+@media (prefers-color-scheme: dark) {
+  .pdf-citation {
+    background: var(--accent-color);
+    color: white;
+  }
+}
+
+/* Estilos para el formulario estructural */
+.structure-form-section {
+  margin: 20px 0;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.structure-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  max-width: 100%;
+  margin: 0 auto;
+  position: relative;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.form-group label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-input {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+.form-textarea {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  min-height: 120px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+@media (max-width: 768px) {
+  .structure-form {
+    max-width: 100%;
+  }
+  
+  .form-input {
+    font-size: 0.9rem;
+    padding: 6px 10px;
+  }
+}
+
+.btn-ready {
+  background: var(--success-color);
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  align-self: flex-end;
+  margin-top: 10px;
+}
+
+.btn-ready:hover {
+  filter: brightness(1.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(46, 204, 113, 0.2);
+}
+
+.btn-ready:disabled {
+  background: #95a5a6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
