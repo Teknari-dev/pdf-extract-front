@@ -5,6 +5,19 @@ import './App.css';
 
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
+// Definir siglas en el ámbito global
+const siglas = {
+  'CCPR': 1,
+  'CESCR': 2,
+  'CERD': 3,
+  'CEDAW': 4,
+  'CAT': 5,
+  'CRC': 6,
+  'CMW': 7,
+  'CRDP': 8,
+  'CED': 9
+};
+
 function App() {
   const [files, setFiles] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -23,10 +36,17 @@ function App() {
   const [currentPdfIndex, setCurrentPdfIndex] = useState(null);
   const [multiExtractMode, setMultiExtractMode] = useState(false);
   const [pdfParagraphNumbers, setPdfParagraphNumbers] = useState({});
+  const [pdfCitations, setPdfCitations] = useState({});
+  const [structuralFormData, setStructuralFormData] = useState({
+    titulo: '',
+    subtitulo: '',
+    categoria1: '',
+    categoria2: '',
+    encabezado: ''
+  });
   const fileInputRef = useRef(null);
 
   const handleFileChange = (e) => {
-    // Si el usuario seleccionó una carpeta, e.target.files contendrá múltiples archivos
     const selectedFiles = Array.from(e.target.files).filter(
       file => file.type === 'application/pdf'
     );
@@ -35,15 +55,24 @@ function App() {
       const newFiles = selectedFiles.map(file => ({
         file,
         name: file.name,
-        selected: true, // Por defecto seleccionados para ser más intuitivo
+        selected: true,
         processed: false,
         id: Math.random().toString(36).substr(2, 9)
       }));
       
-      setFiles(prevFiles => [...prevFiles, ...newFiles]);
-      setSelectedFiles(newFiles); // Actualizar los archivos seleccionados
+      // Generar citas para los nuevos archivos
+      const newCitations = {};
+      newFiles.forEach(file => {
+        const citation = generateCitation(file.name);
+        if (citation) {
+          newCitations[file.id] = citation;
+        }
+      });
       
-      // Mostrar mensaje según si fue uno o varios archivos
+      setPdfCitations(prev => ({ ...prev, ...newCitations }));
+      setFiles(prevFiles => [...prevFiles, ...newFiles]);
+      setSelectedFiles(newFiles);
+      
       if (selectedFiles.length === 1) {
         showNotification(`Se ha añadido "${selectedFiles[0].name}"`, 'success');
       } else {
@@ -125,7 +154,7 @@ function App() {
   const processSelectedPDF = async (id) => {
     const fileToProcess = files.find(file => file.id === id);
     if (!fileToProcess) return;
-    
+
     setLoading(true);
 
     const formData = new FormData();
@@ -217,6 +246,22 @@ function App() {
       return;
     }
 
+    // Obtener los valores del formulario estructural
+    const titulo = document.getElementById('titulo')?.value || '';
+    const subtitulo = document.getElementById('subtitulo')?.value || '';
+    const categoria1 = document.getElementById('categoria1')?.value || '';
+    const categoria2 = document.getElementById('categoria2')?.value || '';
+    const encabezado = document.getElementById('encabezado')?.value || '';
+
+    // Guardar los valores en el estado
+    setStructuralFormData({
+      titulo,
+      subtitulo,
+      categoria1,
+      categoria2,
+      encabezado
+    });
+
     // Convertir entrada de texto a array de números
     const numbersArray = paragraphNumbers.split(',').map(num => num.trim()).filter(Boolean);
     
@@ -297,47 +342,78 @@ function App() {
 
   // Función para descargar el JSON
   const downloadKeywordIndex = () => {
-    if (!currentPdfIndex) return;
-    
-    const currentFile = files.find(file => file.id === currentPdfIndex);
-    if (!currentFile) return;
-    
-    // Crear el objeto con la estructura simplificada
-    const indexData = {
-      fileName: currentFile.name,
-      keywords: {}
-    };
+    try {
+      // Crear el objeto con la estructura solicitada
+      const indexData = {};
 
-    // Procesar cada párrafo y sus palabras clave
-    extractedParagraphs.forEach(paragraph => {
-      paragraph.keywords.forEach(keyword => {
-        if (!indexData.keywords[keyword]) {
-          indexData.keywords[keyword] = [];
-        }
-        
-        // Contar ocurrencias de la palabra clave en este párrafo
-        const occurrences = countOccurrences(paragraph.text, keyword);
-        
-        indexData.keywords[keyword].push({
-          paragraph: paragraph.number,
-          occurrences: occurrences
+      // Primero recolectamos todas las palabras clave únicas
+      const uniqueKeywords = new Set();
+      extractedParagraphs.forEach(paragraph => {
+        paragraph.keywords.forEach(keyword => {
+          uniqueKeywords.add(keyword);
         });
       });
-    });
 
-    // Convertir a string JSON con formato
-    const jsonString = JSON.stringify(indexData, null, 2);
-    
-    // Crear blob y descargar
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `keywords-${currentFile.name.replace('.pdf', '')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+      // Convertir el Set a Array y ordenar alfabéticamente
+      const sortedKeywords = Array.from(uniqueKeywords).sort();
+
+      // Para cada palabra clave, buscar todos los párrafos donde aparece
+      sortedKeywords.forEach(keyword => {
+        indexData[keyword] = [];
+        
+        // Buscar esta palabra clave en todos los párrafos
+        extractedParagraphs.forEach(paragraph => {
+          if (paragraph.keywords.includes(keyword)) {
+            // Obtener el nombre del PDF
+            const pdfName = paragraph.pdfName || files.find(file => file.id === (paragraph.pdfId || currentPdfIndex))?.name || '';
+            
+            // Generar la cita basada en el nombre del archivo
+            let citation = '';
+            for (const [sigla, numero] of Object.entries(siglas)) {
+              if (pdfName.includes(sigla)) {
+                const match = pdfName.match(/\d+/);
+                if (match) {
+                  const docNumber = match[0];
+                  citation = `O-${numero}-${docNumber}-p.${paragraph.number}`;
+                  break;
+                }
+              }
+            }
+
+            // Añadir la información completa del párrafo al array de esta palabra clave
+            indexData[keyword].push([
+              structuralFormData.titulo || '',
+              structuralFormData.subtitulo || '',
+              structuralFormData.categoria1 || '',
+              structuralFormData.categoria2 || '',
+              structuralFormData.encabezado || '',
+              citation,
+              pdfName,
+              paragraph.text
+            ]);
+          }
+        });
+      });
+
+      // Convertir a string JSON con formato
+      const jsonString = JSON.stringify(indexData, null, 2);
+      
+      // Crear blob y descargar
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `keywords-${structuralFormData.titulo || 'index'}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      showNotification('JSON descargado exitosamente', 'success');
+    } catch (error) {
+      console.error('Error al generar el JSON:', error);
+      showNotification('Error al generar el JSON', 'error');
+    }
   };
 
   const goToPreviousStep = () => {
@@ -538,6 +614,22 @@ function App() {
       showNotification('Debes especificar números de párrafos para al menos un PDF', 'error');
       return;
     }
+
+    // Obtener los valores del formulario estructural
+    const titulo = document.getElementById('titulo')?.value || '';
+    const subtitulo = document.getElementById('subtitulo')?.value || '';
+    const categoria1 = document.getElementById('categoria1')?.value || '';
+    const categoria2 = document.getElementById('categoria2')?.value || '';
+    const encabezado = document.getElementById('encabezado')?.value || '';
+
+    // Guardar los valores en el estado
+    setStructuralFormData({
+      titulo,
+      subtitulo,
+      categoria1,
+      categoria2,
+      encabezado
+    });
     
     setLoading(true);
     
@@ -579,6 +671,96 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Función para detectar siglas y generar citas
+  const generateCitation = (fileName) => {
+    // Buscar si el nombre del archivo contiene alguna de las siglas
+    for (const [sigla, numero] of Object.entries(siglas)) {
+      if (fileName.includes(sigla)) {
+        // Buscar cualquier número en el nombre del archivo
+        const match = fileName.match(/\d+/);
+        if (match) {
+          const docNumber = match[0];
+          return `O-${numero}-${docNumber}`;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Función para procesar las citas y extraer los números de párrafos
+  const processCitations = (citationsText) => {
+    // Activar el modo de extracción múltiple si no está activado
+    if (!multiExtractMode) {
+      setMultiExtractMode(true);
+    }
+
+    // Objeto para almacenar los párrafos por archivo
+    const paragraphsByFile = {};
+    
+    // Expresión regular para encontrar citas tipo O-X-XX-p.Y
+    const citationRegex = /O-(\d+)-(\d+)-p\.(\d+)/g;
+    let match;
+    
+    while ((match = citationRegex.exec(citationsText)) !== null) {
+      const [_, comiteNum, docNum, parNum] = match;
+      
+      // Mapeo de números de comité a siglas
+      const comiteMap = {
+        '1': 'CCPR',
+        '2': 'CESCR',
+        '3': 'CERD',
+        '4': 'CEDAW',
+        '5': 'CAT',
+        '6': 'CRC',
+        '7': 'CMW',
+        '8': 'CRDP',
+        '9': 'CED'
+      };
+      
+      const comite = comiteMap[comiteNum];
+      if (!comite) continue;
+      
+      // Buscar el archivo correspondiente
+      const matchingFile = files.find(file => 
+        file.name.includes(`${comite}`) && file.name.includes(`${docNum}`)
+      );
+      
+      if (matchingFile) {
+        if (!paragraphsByFile[matchingFile.id]) {
+          paragraphsByFile[matchingFile.id] = new Set();
+        }
+        paragraphsByFile[matchingFile.id].add(parseInt(parNum));
+
+        // Procesar el archivo si no está procesado
+        if (!matchingFile.processed) {
+          processFileSilently(matchingFile.id);
+        }
+      }
+    }
+    
+    // Actualizar los números de párrafos para cada archivo
+    Object.entries(paragraphsByFile).forEach(([fileId, paragraphs]) => {
+      const sortedParagraphs = Array.from(paragraphs).sort((a, b) => a - b);
+      handlePdfParagraphNumbersChange(fileId, sortedParagraphs.join(', '));
+    });
+
+    // Actualizar el estado de pdfParagraphNumbers
+    setPdfParagraphNumbers(prev => {
+      const newState = { ...prev };
+      Object.entries(paragraphsByFile).forEach(([fileId, paragraphs]) => {
+        const sortedParagraphs = Array.from(paragraphs).sort((a, b) => a - b);
+        newState[fileId] = sortedParagraphs.join(', ');
+      });
+      return newState;
+    });
+  };
+
+  // Función para manejar cambios en el campo de citas
+  const handleCitationsChange = (e) => {
+    const citationsText = e.target.value;
+    processCitations(citationsText);
   };
 
   return (
@@ -673,13 +855,13 @@ function App() {
           )}
           
           <div className="upload-actions">
-            <button 
-              className={`btn ${loading ? 'btn-disabled' : 'btn-primary'}`}
+          <button 
+            className={`btn ${loading ? 'btn-disabled' : 'btn-primary'}`}
               onClick={processPDFs}
               disabled={loading || files.filter(file => file.selected).length === 0}
-            >
+          >
               {loading ? 'Procesando...' : 'Procesar PDFs seleccionados'}
-            </button>
+          </button>
           </div>
         </div>
       )}
@@ -699,8 +881,15 @@ function App() {
                       onClick={() => file.processed ? switchToPdf(file.id) : processSelectedPDF(file.id)}
                       title={file.processed ? file.name : `Procesar ${file.name}`}
                     >
-                      <div className="pdf-selector-name">{file.name}</div>
-                      <div className={`pdf-selector-status ${file.processed ? 'processed' : 'pending'}`}>
+                      <div className="pdf-selector-content">
+                        <div className="pdf-selector-name">
+                          {file.name}
+                        </div>
+                        {pdfCitations[file.id] && (
+                          <div className="pdf-citation">{pdfCitations[file.id]}</div>
+                        )}
+                      </div>
+                      <div className="pdf-selector-status">
                         {file.processed ? 'Procesado' : 'Por procesar'}
                       </div>
                       {currentPdfIndex === file.id && <div className="pdf-selector-indicator"></div>}
@@ -720,8 +909,8 @@ function App() {
           
           {/* El resto del contenido para la edición del texto */}
           {currentPdfIndex ? (
-            <>
-              <div className="app-section text-edit-section">
+        <>
+          <div className="app-section text-edit-section">
                 <div className="section-title">
                   Edita el texto procesado
                   {currentPdfIndex && (
@@ -730,24 +919,24 @@ function App() {
                     </span>
                   )}
                 </div>
-                <div className="section-description">
-                  Puedes editar el texto extraído del PDF. Estos cambios se aplicarán cuando extraigas párrafos específicos.
-                </div>
-                <textarea
-                  className="full-text-editor"
-                  value={editedText}
-                  onChange={handleEditedTextChange}
-                />
-                <div className="edit-actions">
-                  <button 
-                    className={`btn ${loading ? 'btn-disabled' : textEdited ? 'btn-success' : 'btn-primary-outline'}`}
-                    onClick={saveEditedText}
-                    disabled={loading || !textEdited}
-                  >
-                    {loading ? 'Guardando...' : textEdited ? 'Guardar Cambios' : 'Sin Cambios'}
-                  </button>
-                </div>
-              </div>
+            <div className="section-description">
+              Puedes editar el texto extraído del PDF. Estos cambios se aplicarán cuando extraigas párrafos específicos.
+            </div>
+            <textarea
+              className="full-text-editor"
+              value={editedText}
+              onChange={handleEditedTextChange}
+            />
+            <div className="edit-actions">
+              <button 
+                className={`btn ${loading ? 'btn-disabled' : textEdited ? 'btn-success' : 'btn-primary-outline'}`}
+                onClick={saveEditedText}
+                disabled={loading || !textEdited}
+              >
+                {loading ? 'Guardando...' : textEdited ? 'Guardar Cambios' : 'Sin Cambios'}
+              </button>
+            </div>
+          </div>
               
               {/* Mover el toggle de extracción múltiple a su propia sección */}
               <div className="app-section multi-extract-toggle-section">
@@ -765,8 +954,85 @@ function App() {
                   </div>
                 </div>
               </div>
-              
-              <div className="app-section paragraph-section">
+          
+          {/* Nuevo formulario de información estructural */}
+          <div className="app-section structure-form-section">
+            <div className="section-title">Información Estructural</div>
+            <div className="structure-form">
+              <div className="form-group">
+                <label htmlFor="titulo">Título de la estructura:</label>
+                <input
+                  type="text"
+                  id="titulo"
+                  className="form-input"
+                  placeholder="Ingrese el título"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="subtitulo">Subtítulo:</label>
+                <input
+                  type="text"
+                  id="subtitulo"
+                  className="form-input"
+                  placeholder="Ingrese el subtítulo"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="categoria1">Categoría 1:</label>
+                <input
+                  type="text"
+                  id="categoria1"
+                  className="form-input"
+                  placeholder="Ingrese la primera categoría"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="categoria2">Categoría 2:</label>
+                <input
+                  type="text"
+                  id="categoria2"
+                  className="form-input"
+                  placeholder="Ingrese la segunda categoría"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="encabezado">Encabezado:</label>
+                <input
+                  type="text"
+                  id="encabezado"
+                  className="form-input"
+                  placeholder="Ingrese el encabezado"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="citas">Citas:</label>
+                <textarea
+                  id="citas"
+                  className="form-textarea"
+                  placeholder="Ingrese las citas"
+                  rows="4"
+                  onChange={handleCitationsChange}
+                />
+                <button 
+                  className="btn-ready"
+                  onClick={() => {
+                    const citasText = document.getElementById('citas')?.value || '';
+                    if (!citasText.trim()) {
+                      showNotification('Por favor ingrese al menos una cita', 'error');
+                      return;
+                    }
+                    processCitations(citasText);
+                    setMultiExtractMode(true);
+                    showNotification('Párrafos mapeados exitosamente', 'success');
+                  }}
+                >
+                  Listo
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div className="app-section paragraph-section">
                 {multiExtractMode ? (
                   // Modo extracción múltiple
                   <>
@@ -818,21 +1084,21 @@ function App() {
                 ) : (
                   // Modo normal - un solo PDF
                   <>
-                    <div className="section-description">
+            <div className="section-description">
                       Ingresa los números de párrafos separados por comas (ej: 1, 3, 5) o usa el botón para extraer todos los párrafos
-                    </div>
-                    <div className="paragraph-input-container">
-                      <input
-                        type="text"
-                        className="paragraph-input"
-                        placeholder="Ejemplo: 1, 2, 5, 10"
-                        value={paragraphNumbers}
-                        onChange={handleParagraphNumbersChange}
-                      />
+            </div>
+            <div className="paragraph-input-container">
+              <input
+                type="text"
+                className="paragraph-input"
+                placeholder="Ejemplo: 1, 2, 5, 10"
+                value={paragraphNumbers}
+                onChange={handleParagraphNumbersChange}
+              />
                       <div className="paragraph-actions">
-                        <button 
-                          className={`btn ${loading ? 'btn-disabled' : 'btn-primary'}`}
-                          onClick={extractParagraphs}
+              <button 
+                className={`btn ${loading ? 'btn-disabled' : 'btn-primary'}`}
+                onClick={extractParagraphs}
                           disabled={loading || !paragraphNumbers.trim()}
                         >
                           {loading ? 'Extrayendo...' : 'Extraer Párrafos Seleccionados'}
@@ -843,14 +1109,14 @@ function App() {
                           disabled={loading}
                         >
                           {loading ? 'Extrayendo...' : 'Extraer Todos los Párrafos'}
-                        </button>
+              </button>
                       </div>
-                    </div>
-                    {textEdited && !textSaved && (
-                      <div className="warning-message">
-                        ⚠️ Guarda tus cambios antes de extraer párrafos
-                      </div>
-                    )}
+            </div>
+            {textEdited && !textSaved && (
+              <div className="warning-message">
+                ⚠️ Guarda tus cambios antes de extraer párrafos
+              </div>
+            )}
                   </>
                 )}
               </div>
@@ -879,9 +1145,9 @@ function App() {
       )}
       
       {currentStep === 3 && (
-        <>
-          <div className="app-section">
-            <div className="section-title">Párrafos Extraídos</div>
+      <>
+        <div className="app-section">
+          <div className="section-title">Párrafos Extraídos</div>
             {/* Mostrar el nombre del archivo solo si NO estamos en modo de extracción múltiple */}
             {!multiExtractMode && (
               <div className="section-subtitle">
@@ -891,10 +1157,10 @@ function App() {
               </div>
             )}
             
-            {loading ? (
-              <div className="loading">
-                <div className="spinner"></div>
-              </div>
+          {loading ? (
+            <div className="loading">
+              <div className="spinner"></div>
+            </div>
             ) : (
               <>
                 {extractedParagraphs.length > 0 ? (
@@ -907,62 +1173,62 @@ function App() {
                         Descargar Índice de Palabras Clave (JSON)
                       </button>
                     </div>
-                    <div className="extracted-paragraphs">
-                      {extractedParagraphs.map((paragraph, index) => (
-                        <div key={index} className="paragraph-card">
+            <div className="extracted-paragraphs">
+              {extractedParagraphs.map((paragraph, index) => (
+                <div key={index} className="paragraph-card">
                           <div className="paragraph-header">
                             {/* Si estamos en modo multi-extracción, siempre mostramos el nombre del PDF */}
                             {multiExtractMode && paragraph.pdfName && (
                               <div className="paragraph-pdf-name">PDF: {paragraph.pdfName}</div>
                             )}
-                            <div className="paragraph-number">Párrafo {paragraph.number}</div>
+                  <div className="paragraph-number">Párrafo {paragraph.number}</div>
                           </div>
-                          <div className="paragraph-content">
-                            <div className="paragraph-text" dangerouslySetInnerHTML={{ __html: paragraph.text }} />
-                            {paragraph.keywords && paragraph.keywords.length > 0 && (
-                              <div className="paragraph-keywords">
-                                <h4>Palabras clave:</h4>
-                                <div className="keywords-container">
-                                  {paragraph.keywords.map((keyword, i) => (
+                  <div className="paragraph-content">
+                    <div className="paragraph-text" dangerouslySetInnerHTML={{ __html: paragraph.text }} />
+                    {paragraph.keywords && paragraph.keywords.length > 0 && (
+                      <div className="paragraph-keywords">
+                        <h4>Palabras clave:</h4>
+                        <div className="keywords-container">
+                          {paragraph.keywords.map((keyword, i) => (
                                     <span 
                                       key={i} 
                                       className="keyword-tag"
                                     >
                                       {keyword}
                                     </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
                   </>
-                ) : (
-                  <div>No se encontraron párrafos. Intenta con otros números.</div>
+          ) : (
+            <div>No se encontraron párrafos. Intenta con otros números.</div>
                 )}
               </>
-            )}
-          </div>
-          
-          <div className="app-section action-buttons">
-            <button className="btn btn-secondary" onClick={() => setCurrentStep(2)}>
-              Volver a Editar
-            </button>
+          )}
+        </div>
+        
+        <div className="app-section action-buttons">
+          <button className="btn btn-secondary" onClick={() => setCurrentStep(2)}>
+            Volver a Editar
+          </button>
             <div className="action-buttons-right">
               {files.some(file => file.selected && !file.processed) && (
                 <button className="btn btn-primary" onClick={continueWithNextFile}>
                   Continuar con Siguiente PDF
                 </button>
               )}
-              <button className="btn btn-primary" onClick={resetApp}>
+          <button className="btn btn-primary" onClick={resetApp}>
                 Procesar Nuevos PDFs
-              </button>
+          </button>
             </div>
-          </div>
-        </>
-      )}
+        </div>
+      </>
+    )}
     </div>
   );
 }
