@@ -194,6 +194,15 @@ function App() {
         }
       });
 
+      // Generar y almacenar la cita para este archivo
+      const citation = generateCitation(fileToProcess.name);
+      if (citation) {
+        setPdfCitations(prev => ({
+          ...prev,
+          [id]: citation
+        }));
+      }
+
       setRawText(response.data.rawText);
       setEditedText(response.data.rawText);
       setPdfId(response.data.pdfId);
@@ -395,16 +404,14 @@ function App() {
             // Obtener el nombre del PDF
             const pdfName = paragraph.pdfName || files.find(file => file.id === (paragraph.pdfId || currentPdfIndex))?.name || '';
             
-            // Generar la cita basada en el nombre del archivo
+            // Obtener la cita del archivo
             let citation = '';
-            for (const [sigla, numero] of Object.entries(siglas)) {
-              if (pdfName.includes(sigla)) {
-                const match = pdfName.match(/\d+/);
-                if (match) {
-                  const docNumber = match[0];
-                  citation = `O-${numero}-${docNumber}-p.${paragraph.number}`;
-                  break;
-                }
+            const file = files.find(file => file.name === pdfName);
+            if (file) {
+              // Usar la cita existente si está disponible
+              citation = pdfCitations[file.id] || generateCitation(file.name);
+              if (citation) {
+                citation = `${citation}-p.${paragraph.number}`;
               }
             }
 
@@ -716,10 +723,19 @@ function App() {
 
   // Función para detectar siglas y generar citas
   const generateCitation = (fileName) => {
-    // Buscar si el nombre del archivo contiene alguna de las siglas
+    // Primero verificar si es una relatoría
+    if (fileName.includes("Reporte")) {
+      const match = fileName.match(/\d+/);
+      if (match) {
+        const docNumber = match[0];
+        return `R-PE-${docNumber}`;
+      }
+    }
+    
+
+    // Si no es relatoría, verificar si es una observación
     for (const [sigla, numero] of Object.entries(siglas)) {
       if (fileName.includes(sigla)) {
-        // Buscar cualquier número en el nombre del archivo
         const match = fileName.match(/\d+/);
         if (match) {
           const docNumber = match[0];
@@ -753,16 +769,14 @@ function App() {
 
     // Objeto para almacenar los párrafos por archivo
     const paragraphsByFile = {};
-    let isAnyValidFormat = false;
 
-    // Procesar cada cita válida (entre paréntesis)
-    citationMatches.forEach(citation => {
-      // Expresión regular para encontrar citas tipo O-X-XX-p.Y
-      const citationRegex = /O-(\d+)-(\d+)-p\.(\d+)/g;
-      let match;
-
-      while ((match = citationRegex.exec(citation)) !== null) {
-        isAnyValidFormat = true;
+    
+    // Expresión regular para encontrar citas tipo O-X-XX-p.Y o R-PE-X-p.Y
+    const citationRegex = /(?:O-(\d+)-(\d+)-p\.(\d+)|R-PE-(\d+)-p\.(\d+))/g;
+    let match;
+    
+    while ((match = citationRegex.exec(citationsText)) !== null) {
+      if (match[1]) { // Es una observación
         const [_, comiteNum, docNum, parNum] = match;
         
         // Mapeo de números de comité a siglas
@@ -784,6 +798,25 @@ function App() {
         // Buscar el archivo correspondiente
         const matchingFile = files.find(file => 
           file.name.includes(`${comite}`) && file.name.includes(`${docNum}`)
+        );
+        
+        if (matchingFile) {
+          if (!paragraphsByFile[matchingFile.id]) {
+            paragraphsByFile[matchingFile.id] = new Set();
+          }
+          paragraphsByFile[matchingFile.id].add(parseInt(parNum));
+
+          // Procesar el archivo si no está procesado
+          if (!matchingFile.processed) {
+            processFileSilently(matchingFile.id);
+          }
+        }
+      } else { // Es una relatoría
+        const [_, __, ___, reportNum, parNum] = match;
+        
+        // Buscar el archivo correspondiente
+        const matchingFile = files.find(file => 
+          file.name.match(new RegExp(`Reporte temático ${reportNum}`, 'i'))
         );
         
         if (matchingFile) {
@@ -1301,13 +1334,25 @@ function App() {
             <div className="extracted-paragraphs">
               {extractedParagraphs.map((paragraph, index) => (
                 <div key={index} className="paragraph-card">
-                          <div className="paragraph-header">
-                            {/* Si estamos en modo multi-extracción, siempre mostramos el nombre del PDF */}
-                            {multiExtractMode && paragraph.pdfName && (
-                              <div className="paragraph-pdf-name">PDF: {paragraph.pdfName}</div>
-                            )}
-                  <div className="paragraph-number">Párrafo {paragraph.number}</div>
-                          </div>
+                  <div className="paragraph-header">
+                    {/* Si estamos en modo multi-extracción, siempre mostramos el nombre del PDF */}
+                    {multiExtractMode && paragraph.pdfName && (
+                      <div className="paragraph-pdf-name">PDF: {paragraph.pdfName}</div>
+                    )}
+                    <div className="paragraph-number">
+                      {(() => {
+                        const pdfName = paragraph.pdfName || files.find(file => file.id === (paragraph.pdfId || currentPdfIndex))?.name || '';
+                        const file = files.find(file => file.name === pdfName);
+                        if (file) {
+                          const citation = pdfCitations[file.id] || generateCitation(file.name);
+                          if (citation) {
+                            return `${citation}-p.${paragraph.number}`;
+                          }
+                        }
+                        return `Párrafo ${paragraph.number}`;
+                      })()}
+                    </div>
+                  </div>
                   <div className="paragraph-content">
                     <div className="paragraph-text" dangerouslySetInnerHTML={{ __html: paragraph.text }} />
                     {paragraph.keywords && paragraph.keywords.length > 0 && (
