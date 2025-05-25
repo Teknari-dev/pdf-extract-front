@@ -1,9 +1,15 @@
 // src/App.js
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+
+const THEME_OPTIONS = {
+  LIGHT: 'light',
+  DARK: 'dark',
+  SYSTEM: 'system'
+};
 
 // Definir siglas en el ámbito global
 const siglas = {
@@ -42,9 +48,30 @@ function App() {
     subtitulo: '',
     categoria1: '',
     categoria2: '',
-    encabezado: ''
+    encabezado: '',
+    citas: ''
   });
   const fileInputRef = useRef(null);
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme || THEME_OPTIONS.SYSTEM;
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    
+    if (theme === THEME_OPTIONS.SYSTEM) {
+      root.removeAttribute('data-theme');
+      localStorage.removeItem('theme');
+    } else {
+      root.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+    }
+  }, [theme]);
+
+  const handleThemeChange = (selectedTheme) => {
+    setTheme(selectedTheme);
+  };
 
   const handleFileChange = (e) => {
     const selectedFiles = Array.from(e.target.files).filter(
@@ -268,7 +295,8 @@ function App() {
       subtitulo,
       categoria1,
       categoria2,
-      encabezado
+      encabezado,
+      citas: ''
     });
 
     // Convertir entrada de texto a array de números
@@ -425,6 +453,17 @@ function App() {
 
   const goToPreviousStep = () => {
     if (currentStep > 1) {
+      // Si estamos volviendo del paso 3 al 2, restauramos los valores del formulario
+      if (currentStep === 3) {
+        document.getElementById('titulo').value = structuralFormData.titulo;
+        document.getElementById('subtitulo').value = structuralFormData.subtitulo;
+        document.getElementById('categoria1').value = structuralFormData.categoria1;
+        document.getElementById('categoria2').value = structuralFormData.categoria2;
+        document.getElementById('encabezado').value = structuralFormData.encabezado;
+        if (multiExtractMode) {
+          document.getElementById('citas').value = structuralFormData.citas;
+        }
+      }
       setCurrentStep(currentStep - 1);
     }
   };
@@ -628,6 +667,7 @@ function App() {
     const categoria1 = document.getElementById('categoria1')?.value || '';
     const categoria2 = document.getElementById('categoria2')?.value || '';
     const encabezado = document.getElementById('encabezado')?.value || '';
+    const citas = document.getElementById('citas')?.value || '';
 
     // Guardar los valores en el estado
     setStructuralFormData({
@@ -635,7 +675,8 @@ function App() {
       subtitulo,
       categoria1,
       categoria2,
-      encabezado
+      encabezado,
+      citas
     });
     
     setLoading(true);
@@ -705,8 +746,22 @@ function App() {
     return null;
   };
 
-  // Función para procesar las citas y extraer los números de párrafos
+  // Modificar la función que procesa las citas
   const processCitations = (citationsText) => {
+    // Limpiar los números de párrafos si el texto está vacío
+    if (!citationsText.trim()) {
+      setPdfParagraphNumbers({});
+      return;
+    }
+
+    // Encontrar todas las citas que estén entre paréntesis
+    const citationMatches = citationsText.match(/\([^()]*\)/g);
+    
+    if (!citationMatches) {
+      setPdfParagraphNumbers({});
+      return;
+    }
+
     // Activar el modo de extracción múltiple si no está activado
     if (!multiExtractMode) {
       setMultiExtractMode(true);
@@ -714,6 +769,7 @@ function App() {
 
     // Objeto para almacenar los párrafos por archivo
     const paragraphsByFile = {};
+
     
     // Expresión regular para encontrar citas tipo O-X-XX-p.Y o R-PE-X-p.Y
     const citationRegex = /(?:O-(\d+)-(\d+)-p\.(\d+)|R-PE-(\d+)-p\.(\d+))/g;
@@ -775,34 +831,75 @@ function App() {
           }
         }
       }
+    });
+
+    // Si no se encontró ninguna cita válida, limpiar los párrafos
+    if (!isAnyValidFormat) {
+      setPdfParagraphNumbers({});
+      return;
     }
-    
+
     // Actualizar los números de párrafos para cada archivo
+    const newParagraphNumbers = {};
     Object.entries(paragraphsByFile).forEach(([fileId, paragraphs]) => {
       const sortedParagraphs = Array.from(paragraphs).sort((a, b) => a - b);
-      handlePdfParagraphNumbersChange(fileId, sortedParagraphs.join(', '));
+      newParagraphNumbers[fileId] = sortedParagraphs.join(', ');
     });
 
-    // Actualizar el estado de pdfParagraphNumbers
-    setPdfParagraphNumbers(prev => {
-      const newState = { ...prev };
-      Object.entries(paragraphsByFile).forEach(([fileId, paragraphs]) => {
-        const sortedParagraphs = Array.from(paragraphs).sort((a, b) => a - b);
-        newState[fileId] = sortedParagraphs.join(', ');
-      });
-      return newState;
-    });
+    // Actualizar el estado con los nuevos números de párrafos
+    setPdfParagraphNumbers(newParagraphNumbers);
+
+    // Guardar las citas en el estado estructural
+    setStructuralFormData(prev => ({
+      ...prev,
+      citas: citationsText
+    }));
   };
 
-  // Función para manejar cambios en el campo de citas
+  // Modificar la función que maneja los cambios en las citas
   const handleCitationsChange = (e) => {
     const citationsText = e.target.value;
+    
+    // Actualizar el estado estructural
+    setStructuralFormData(prev => ({
+      ...prev,
+      citas: citationsText
+    }));
+    
+    // Procesar las citas
     processCitations(citationsText);
   };
 
   return (
     <div className="App">
       <h1>Extractor y Editor de Párrafos PDF</h1>
+      
+      <div className="theme-selector">
+        <div className="theme-selector-title">Tema:</div>
+        <div className="theme-options">
+          <button 
+            className={`theme-button ${theme === THEME_OPTIONS.LIGHT ? 'active' : ''}`}
+            onClick={() => handleThemeChange(THEME_OPTIONS.LIGHT)}
+            title="Modo claro"
+          >
+            ☀️
+          </button>
+          <button 
+            className={`theme-button ${theme === THEME_OPTIONS.DARK ? 'active' : ''}`}
+            onClick={() => handleThemeChange(THEME_OPTIONS.DARK)}
+            title="Modo oscuro"
+          >
+            🌙
+          </button>
+          <button 
+            className={`theme-button ${theme === THEME_OPTIONS.SYSTEM ? 'active' : ''}`}
+            onClick={() => handleThemeChange(THEME_OPTIONS.SYSTEM)}
+            title="Tema del sistema"
+          >
+            💻
+          </button>
+        </div>
+      </div>
       
       {notification && (
         <div className={`notification notification-${notification.type}`}>
@@ -1003,6 +1100,8 @@ function App() {
                   id="titulo"
                   className="form-input"
                   placeholder="Ingrese el título"
+                  value={structuralFormData.titulo || ''}
+                  onChange={(e) => setStructuralFormData({ ...structuralFormData, titulo: e.target.value })}
                 />
               </div>
               <div className="form-group">
@@ -1012,6 +1111,8 @@ function App() {
                   id="subtitulo"
                   className="form-input"
                   placeholder="Ingrese el subtítulo"
+                  value={structuralFormData.subtitulo || ''}
+                  onChange={(e) => setStructuralFormData({ ...structuralFormData, subtitulo: e.target.value })}
                 />
               </div>
               <div className="form-group">
@@ -1021,6 +1122,8 @@ function App() {
                   id="categoria1"
                   className="form-input"
                   placeholder="Ingrese la primera categoría"
+                  value={structuralFormData.categoria1 || ''}
+                  onChange={(e) => setStructuralFormData({ ...structuralFormData, categoria1: e.target.value })}
                 />
               </div>
               <div className="form-group">
@@ -1030,6 +1133,8 @@ function App() {
                   id="categoria2"
                   className="form-input"
                   placeholder="Ingrese la segunda categoría"
+                  value={structuralFormData.categoria2 || ''}
+                  onChange={(e) => setStructuralFormData({ ...structuralFormData, categoria2: e.target.value })}
                 />
               </div>
               <div className="form-group">
@@ -1039,39 +1144,28 @@ function App() {
                   id="encabezado"
                   className="form-input"
                   placeholder="Ingrese el encabezado"
+                  value={structuralFormData.encabezado || ''}
+                  onChange={(e) => setStructuralFormData({ ...structuralFormData, encabezado: e.target.value })}
                 />
               </div>
-              <div className="form-group">
-                <label htmlFor="citas">Citas:</label>
-                <textarea
-                  id="citas"
-                  className="form-textarea"
-                  placeholder="Ingrese las citas"
-                  rows="4"
-                  onChange={handleCitationsChange}
-                />
-                <button 
-                  className="btn-ready"
-                  onClick={() => {
-                    const citasText = document.getElementById('citas')?.value || '';
-                    if (!citasText.trim()) {
-                      showNotification('Por favor ingrese al menos una cita', 'error');
-                      return;
-                    }
-                    processCitations(citasText);
-                    setMultiExtractMode(true);
-                    showNotification('Párrafos mapeados exitosamente', 'success');
-                  }}
-                >
-                  Listo
-                </button>
-              </div>
+              {multiExtractMode && (
+                <div className="form-group">
+                  <label htmlFor="citas">Citas:</label>
+                  <textarea
+                    id="citas"
+                    className="form-textarea"
+                    placeholder="Ingrese las citas"
+                    rows="4"
+                    value={structuralFormData.citas || ''}
+                    onChange={handleCitationsChange}
+                  />
+                </div>
+              )}
             </div>
           </div>
           
           <div className="app-section paragraph-section">
                 {multiExtractMode ? (
-                  // Modo extracción múltiple
                   <>
                     <div className="section-description">
                       Especifica los números de párrafos para cada PDF procesado que quieras extraer.
@@ -1084,24 +1178,58 @@ function App() {
                           <p>Procesando PDFs pendientes...</p>
                         </div>
                       ) : (
-                        <div className="multi-pdf-paragraphs">
-                          {files.filter(file => file.processed).map(file => (
-                            <div 
-                              key={file.id} 
-                              className={`multi-pdf-paragraph-item ${pdfParagraphNumbers[file.id]?.trim() ? 'has-paragraphs' : ''}`}
-                            >
-                              <div className="multi-pdf-name">{file.name}</div>
-                              <div className="multi-pdf-input-container">
-                                <input
-                                  type="text"
-                                  className="paragraph-input"
-                                  placeholder="Ejemplo: 1, 2, 5, 10"
-                                  value={pdfParagraphNumbers[file.id] || ''}
-                                  onChange={(e) => handlePdfParagraphNumbersChange(file.id, e.target.value)}
-                                />
-                              </div>
+                        <div className="multi-pdf-lists-container">
+                          {/* Lista de PDFs con párrafos especificados */}
+                          <div className="multi-pdf-list">
+                            <div className="multi-pdf-section-title">PDFs con párrafos seleccionados</div>
+                            <div className="multi-pdf-paragraphs selected-pdfs">
+                              {files.filter(file => 
+                                file.processed && pdfParagraphNumbers[file.id]?.trim()
+                              ).map(file => (
+                                <div 
+                                  key={file.id} 
+                                  className="multi-pdf-paragraph-item has-paragraphs"
+                                >
+                                  <div className="multi-pdf-name">{file.name}</div>
+                                  <div className="multi-pdf-input-container">
+                                    <input
+                                      type="text"
+                                      className="paragraph-input"
+                                      placeholder="Ejemplo: 1, 2, 5, 10"
+                                      value={pdfParagraphNumbers[file.id] || ''}
+                                      onChange={(e) => handlePdfParagraphNumbersChange(file.id, e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          </div>
+
+                          {/* Lista de PDFs sin párrafos especificados */}
+                          <div className="multi-pdf-list">
+                            <div className="multi-pdf-section-title">PDFs pendientes</div>
+                            <div className="multi-pdf-paragraphs pending-pdfs">
+                              {files.filter(file => 
+                                file.processed && !pdfParagraphNumbers[file.id]?.trim()
+                              ).map(file => (
+                                <div 
+                                  key={file.id} 
+                                  className="multi-pdf-paragraph-item"
+                                >
+                                  <div className="multi-pdf-name">{file.name}</div>
+                                  <div className="multi-pdf-input-container">
+                                    <input
+                                      type="text"
+                                      className="paragraph-input"
+                                      placeholder="Ejemplo: 1, 2, 5, 10"
+                                      value={pdfParagraphNumbers[file.id] || ''}
+                                      onChange={(e) => handlePdfParagraphNumbersChange(file.id, e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       )}
                       
@@ -1122,7 +1250,7 @@ function App() {
                   // Modo normal - un solo PDF
                   <>
             <div className="section-description">
-                      Ingresa los números de párrafos separados por comas (ej: 1, 3, 5) o usa el botón para extraer todos los párrafos
+                      Ingresa los números de párrafos separados por comas (ej: 1, 3, 5)
             </div>
             <div className="paragraph-input-container">
               <input
@@ -1140,13 +1268,6 @@ function App() {
                         >
                           {loading ? 'Extrayendo...' : 'Extraer Párrafos Seleccionados'}
                         </button>
-                        <button 
-                          className={`btn ${loading ? 'btn-disabled' : 'btn-secondary'}`}
-                          onClick={extractAllParagraphs}
-                          disabled={loading}
-                        >
-                          {loading ? 'Extrayendo...' : 'Extraer Todos los Párrafos'}
-              </button>
                       </div>
             </div>
             {textEdited && !textSaved && (
@@ -1266,11 +1387,6 @@ function App() {
             Volver a Editar
           </button>
             <div className="action-buttons-right">
-              {files.some(file => file.selected && !file.processed) && (
-                <button className="btn btn-primary" onClick={continueWithNextFile}>
-                  Continuar con Siguiente PDF
-                </button>
-              )}
           <button className="btn btn-primary" onClick={resetApp}>
                 Procesar Nuevos PDFs
           </button>
