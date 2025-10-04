@@ -194,6 +194,15 @@ function App() {
         }
       });
 
+      // Generar y almacenar la cita para este archivo
+      const citation = generateCitation(fileToProcess.name);
+      if (citation) {
+        setPdfCitations(prev => ({
+          ...prev,
+          [id]: citation
+        }));
+      }
+
       setRawText(response.data.rawText);
       setEditedText(response.data.rawText);
       setPdfId(response.data.pdfId);
@@ -395,7 +404,7 @@ function App() {
             // Obtener el nombre del PDF
             const pdfName = paragraph.pdfName || files.find(file => file.id === (paragraph.pdfId || currentPdfIndex))?.name || '';
             
-            // Generar la cita basada en el nombre del archivo
+            // Obtener la cita del archivo
             let citation = '';
             const pdfNameLower = pdfName.toLowerCase();
             for (const [sigla, numero] of Object.entries(siglas)) {
@@ -776,16 +785,14 @@ function App() {
 
     // Objeto para almacenar los párrafos por archivo
     const paragraphsByFile = {};
-    let isAnyValidFormat = false;
 
-    // Procesar cada cita válida (entre paréntesis)
-    citationMatches.forEach(citation => {
-      // Expresión regular para encontrar citas tipo O-X-XX-p.Y
-      const citationRegex = /O-(\d+)-(\d+)-p\.(\d+)/g;
-      let match;
-
-      while ((match = citationRegex.exec(citation)) !== null) {
-        isAnyValidFormat = true;
+    
+    // Expresión regular para encontrar citas tipo O-X-XX-p.Y o R-PE-X-p.Y
+    const citationRegex = /(?:O-(\d+)-(\d+)-p\.(\d+)|R-PE-(\d+)-p\.(\d+))/g;
+    let match;
+    
+    while ((match = citationRegex.exec(citationsText)) !== null) {
+      if (match[1]) { // Es una observación
         const [_, comiteNum, docNum, parNum] = match;
         
         // Mapeo de números de comité a siglas
@@ -803,6 +810,25 @@ function App() {
         
         const comite = comiteMap[comiteNum];
         if (!comite) continue;
+        
+        // Buscar el archivo correspondiente (insensible a mayúsculas)
+        const matchingFile = files.find(file => 
+          file.name.toLowerCase().includes(comite.toLowerCase()) && file.name.includes(`${docNum}`)
+        );
+        
+        if (matchingFile) {
+          if (!paragraphsByFile[matchingFile.id]) {
+            paragraphsByFile[matchingFile.id] = new Set();
+          }
+          paragraphsByFile[matchingFile.id].add(parseInt(parNum));
+
+          // Procesar el archivo si no está procesado
+          if (!matchingFile.processed) {
+            processFileSilently(matchingFile.id);
+          }
+        }
+      } else { // Es una relatoría
+        const [_, __, ___, reportNum, parNum] = match;
         
         // Buscar el archivo correspondiente (insensible a mayúsculas)
         const matchingFile = files.find(file => 
@@ -1324,13 +1350,25 @@ function App() {
             <div className="extracted-paragraphs">
               {extractedParagraphs.map((paragraph, index) => (
                 <div key={index} className="paragraph-card">
-                          <div className="paragraph-header">
-                            {/* Si estamos en modo multi-extracción, siempre mostramos el nombre del PDF */}
-                            {multiExtractMode && paragraph.pdfName && (
-                              <div className="paragraph-pdf-name">PDF: {paragraph.pdfName}</div>
-                            )}
-                  <div className="paragraph-number">Párrafo {paragraph.number}</div>
-                          </div>
+                  <div className="paragraph-header">
+                    {/* Si estamos en modo multi-extracción, siempre mostramos el nombre del PDF */}
+                    {multiExtractMode && paragraph.pdfName && (
+                      <div className="paragraph-pdf-name">PDF: {paragraph.pdfName}</div>
+                    )}
+                    <div className="paragraph-number">
+                      {(() => {
+                        const pdfName = paragraph.pdfName || files.find(file => file.id === (paragraph.pdfId || currentPdfIndex))?.name || '';
+                        const file = files.find(file => file.name === pdfName);
+                        if (file) {
+                          const citation = pdfCitations[file.id] || generateCitation(file.name);
+                          if (citation) {
+                            return `${citation}-p.${paragraph.number}`;
+                          }
+                        }
+                        return `Párrafo ${paragraph.number}`;
+                      })()}
+                    </div>
+                  </div>
                   <div className="paragraph-content">
                     <div className="paragraph-text" dangerouslySetInnerHTML={{ __html: paragraph.text }} />
                     {paragraph.keywords && paragraph.keywords.length > 0 && (
