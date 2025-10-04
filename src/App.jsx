@@ -20,7 +20,7 @@ const siglas = {
   'CAT': 5,
   'CRC': 6,
   'CMW': 7,
-  'CRDP': 8,
+  'CRPD': 8,
   'CED': 9
 };
 
@@ -397,11 +397,22 @@ function App() {
             
             // Generar la cita basada en el nombre del archivo
             let citation = '';
+            const pdfNameLower = pdfName.toLowerCase();
             for (const [sigla, numero] of Object.entries(siglas)) {
-              if (pdfName.includes(sigla)) {
-                const match = pdfName.match(/\d+/);
+              if (pdfNameLower.includes(sigla.toLowerCase())) {
+                // Buscar el número que está después de la sigla
+                const siglaPattern = new RegExp(`${sigla}[^\\d]*(\\d+)`, 'i');
+                const match = pdfName.match(siglaPattern);
                 if (match) {
-                  const docNumber = match[0];
+                  const docNumber = match[1];
+                  citation = `O-${numero}-${docNumber}-p.${paragraph.number}`;
+                  break;
+                }
+                
+                // Si no encuentra el patrón anterior, buscar el último número en el archivo
+                const allNumbers = pdfName.match(/\d+/g);
+                if (allNumbers && allNumbers.length > 0) {
+                  const docNumber = allNumbers[allNumbers.length - 1]; // Último número
                   citation = `O-${numero}-${docNumber}-p.${paragraph.number}`;
                   break;
                 }
@@ -716,13 +727,25 @@ function App() {
 
   // Función para detectar siglas y generar citas
   const generateCitation = (fileName) => {
-    // Buscar si el nombre del archivo contiene alguna de las siglas
+    // Convertir el nombre del archivo a minúsculas para comparación
+    const fileNameLower = fileName.toLowerCase();
+    
+    // Buscar si el nombre del archivo contiene alguna de las siglas (insensible a mayúsculas)
     for (const [sigla, numero] of Object.entries(siglas)) {
-      if (fileName.includes(sigla)) {
-        // Buscar cualquier número en el nombre del archivo
-        const match = fileName.match(/\d+/);
+      if (fileNameLower.includes(sigla.toLowerCase())) {
+        // Buscar el número que está después de la sigla
+        // Patrón: buscar la sigla seguida de cualquier cosa y luego un número
+        const siglaPattern = new RegExp(`${sigla}[^\\d]*(\\d+)`, 'i');
+        const match = fileName.match(siglaPattern);
         if (match) {
-          const docNumber = match[0];
+          const docNumber = match[1];
+          return `O-${numero}-${docNumber}`;
+        }
+        
+        // Si no encuentra el patrón anterior, buscar el último número en el archivo
+        const allNumbers = fileName.match(/\d+/g);
+        if (allNumbers && allNumbers.length > 0) {
+          const docNumber = allNumbers[allNumbers.length - 1]; // Último número
           return `O-${numero}-${docNumber}`;
         }
       }
@@ -774,16 +797,16 @@ function App() {
           '5': 'CAT',
           '6': 'CRC',
           '7': 'CMW',
-          '8': 'CRDP',
+          '8': 'CRPD',
           '9': 'CED'
         };
         
         const comite = comiteMap[comiteNum];
         if (!comite) continue;
         
-        // Buscar el archivo correspondiente
+        // Buscar el archivo correspondiente (insensible a mayúsculas)
         const matchingFile = files.find(file => 
-          file.name.includes(`${comite}`) && file.name.includes(`${docNum}`)
+          file.name.toLowerCase().includes(comite.toLowerCase()) && file.name.includes(`${docNum}`)
         );
         
         if (matchingFile) {
